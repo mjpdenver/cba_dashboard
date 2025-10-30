@@ -3,10 +3,11 @@ library(stringr)
 library(dplyr)
 library(purrr)
 library(tidyr)
+library(lubridate)
 
 # Define data directory and PDF files
-data_dir <- "data"
-pdf_files <- c("2025 3A Finals.pdf", "2025 3A Semi Finals.pdf", "test.pdf")
+data_dir <- "CBA_scores_pdfs/"
+pdf_files <- dir("CBA_scores_pdfs/", pattern = "*.pdf") # c("2025 3A Finals.pdf", "2025 3A Semi Finals.pdf", "test.pdf")
 
 extract_scores_labeled <- function(file, directory = data_dir) {
     # Construct full path
@@ -49,13 +50,16 @@ extract_scores_labeled <- function(file, directory = data_dir) {
         event_round <- round_match
     }
 
-    # Lines that contain a school name (ending in HS followed by numbers)
-    # Filter out header lines that might contain "HS" or other patterns
-    potential_school_lines <- lines[str_detect(lines, "(?i)HS\\s+\\d")]
+    # Lines that contain a school name followed by numbers
+    # Match patterns: "School Name HS" or just "School Name" followed by numbers
+    # Pattern matches: capitalized words (including spaces, hyphens, apostrophes) followed by either "HS" or just whitespace, then digits
+    potential_school_lines <- lines[str_detect(lines, "^[A-Z][A-Za-z'&\\-]+(\\s+[A-Z][A-Za-z'&\\-]+)*(\\s+HS)?\\s+\\d")]
 
     # Remove lines that look like headers (contain words like "Performance", "Effect", "Individual", etc.)
-    header_keywords <- c("Performance", "Individual", "Ensemble", "Effect", "Visual", "Music", "Timing", "Penalties", "Judge", "Total")
+    # Also filter out lines that start with "Class" (class headers)
+    header_keywords <- c("Performance", "Individual", "Ensemble", "Effect", "Visual", "Music", "Timing", "Penalties", "Judge", "Total", "Head", "Sub", "Weighted")
     school_lines <- potential_school_lines[!str_detect(potential_school_lines, paste(header_keywords, collapse = "|"))]
+    school_lines <- school_lines[!str_detect(school_lines, "^Class\\s+[1-4]A")]
 
     # Track the class for each school by finding "Class XA" headers
     # Build a mapping of line numbers to classes
@@ -71,7 +75,9 @@ extract_scores_labeled <- function(file, directory = data_dir) {
     }
     
     df_list <- map(school_lines, function(line) {
-        school <- str_extract(line, "^[A-Za-z'&\\- ]+HS")
+        # Extract school name - either ending in "HS" or just the capitalized words before numbers
+        school <- str_extract(line, "^[A-Z][A-Za-z'&\\-]+(\\s+[A-Z][A-Za-z'&\\-]+)*(\\s+HS)?")
+        school <- str_trim(school)
 
         # Find which line this is and get its class
         line_idx <- which(lines == line)[1]
@@ -153,6 +159,19 @@ extract_scores_labeled <- function(file, directory = data_dir) {
 
 # Apply to both files and combine
 scores_labeled_df <- map(pdf_files, extract_scores_labeled) |> bind_rows()
+
+# Convert Event_Date to Date class
+scores_labeled_df <- scores_labeled_df |>
+    mutate(Event_Date = case_when(
+        # MM/DD/YYYY format
+        str_detect(Event_Date, "^\\d{1,2}/\\d{1,2}/\\d{4}$") ~ mdy(Event_Date),
+        # YYYY-MM-DD format
+        str_detect(Event_Date, "^\\d{4}-\\d{2}-\\d{2}$") ~ ymd(Event_Date),
+        # Month DD, YYYY format
+        str_detect(Event_Date, "^[A-Za-z]+ \\d{1,2},? \\d{4}$") ~ mdy(Event_Date),
+        # Default - try to parse as-is
+        TRUE ~ as.Date(Event_Date, tryFormats = c("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y", "%b %d, %Y"))
+    ))
 
 # Clean up
 scores_labeled_df <- scores_labeled_df |> arrange(File, School)
