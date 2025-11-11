@@ -6,8 +6,16 @@ library(tidyr)
 library(lubridate)
 
 # Define data directory and PDF files
-data_dir <- "CBA_scores_pdfs/"
-pdf_files <- dir("CBA_scores_pdfs/", pattern = "*.pdf") # c("2025 3A Finals.pdf", "2025 3A Semi Finals.pdf", "test.pdf")
+# Handle running from both project root and R/ subdirectory
+if (dir.exists("CBA_scores_pdfs2/")) {
+    data_dir <- "CBA_scores_pdfs2/"
+} else if (dir.exists("../CBA_scores_pdfs2/")) {
+    data_dir <- "../CBA_scores_pdfs2/"
+} else {
+    stop("Cannot find CBA_scores_pdfs2/ directory. Please run from project root or R/ subdirectory.")
+}
+
+pdf_files <- dir(data_dir, pattern = "*.pdf")
 
 extract_scores_labeled <- function(file, directory = data_dir) {
     # Construct full path
@@ -15,39 +23,84 @@ extract_scores_labeled <- function(file, directory = data_dir) {
     text <- pdf_text(full_path) |> paste(collapse = "\n")
     lines <- str_split(text, "\n")[[1]] |> str_squish()
 
-    # Extract event date - look for common date patterns
+    # Extract event date - look for full date format first (e.g., "Saturday, September 28, 2024")
+    # This helps find the main date, not footer dates
     event_date <- NA
-    date_patterns <- c(
-        "\\d{1,2}/\\d{1,2}/\\d{4}",      # MM/DD/YYYY or M/D/YYYY
-        "\\d{4}-\\d{2}-\\d{2}",           # YYYY-MM-DD
-        "[A-Za-z]+ \\d{1,2},? \\d{4}"    # Month DD, YYYY or Month DD YYYY
-    )
-    for (pattern in date_patterns) {
-        match <- str_extract(text, pattern)
-        if (!is.na(match)) {
-            event_date <- match
-            break
+    date_line_idx <- NA
+
+    # Try to find full date with day of week first (most reliable for finding main date)
+    full_date_pattern <- "(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\\s+[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4}"
+    full_date_match <- str_extract(text, full_date_pattern)
+
+    if (!is.na(full_date_match)) {
+        # Extract just the date part (without day of week)
+        event_date <- str_extract(full_date_match, "[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4}")
+        # Find which line contains this full date
+        date_line_idx <- which(str_detect(lines, fixed(full_date_match)))[1]
+    } else {
+        # Fall back to simpler date patterns
+        date_patterns <- c(
+            "[A-Za-z]+ \\d{1,2},? \\d{4}",  # Month DD, YYYY (try this first)
+            "\\d{1,2}/\\d{1,2}/\\d{4}",      # MM/DD/YYYY or M/D/YYYY
+            "\\d{4}-\\d{2}-\\d{2}"            # YYYY-MM-DD
+        )
+        for (pattern in date_patterns) {
+            match <- str_extract(text, pattern)
+            if (!is.na(match)) {
+                event_date <- match
+                # Find which line contains this date (exclude lines with "of" to avoid footer dates)
+                matching_lines <- which(str_detect(lines, fixed(match)))
+                # Filter out lines that look like footers (contain "of" like "1 of 3")
+                non_footer_lines <- matching_lines[!str_detect(lines[matching_lines], "\\d+\\s+of\\s+\\d+")]
+                if (length(non_footer_lines) > 0) {
+                    date_line_idx <- non_footer_lines[1]
+                } else {
+                    date_line_idx <- matching_lines[1]
+                }
+                break
+            }
         }
     }
 
-    # Extract event type (Regional, State, etc.)
+    # Extract competition name - typically 2 lines above the date
+    competition_name <- NA
+    if (!is.na(date_line_idx) && date_line_idx > 2) {
+        # Look 2 lines above the date
+        comp_line <- lines[date_line_idx - 2]
+        # Clean up the line - remove empty strings and extra whitespace
+        if (!is.na(comp_line) && nchar(comp_line) > 0) {
+            competition_name <- comp_line
+        }
+    }
+
+    # Extract event type (Regional, State, or Invitational)
     event_type <- NA
     event_type_match <- str_extract(text, "(?i)(Regional|State)")
     if (!is.na(event_type_match)) {
         event_type <- str_to_title(event_type_match)
+    } else {
+        # If not Regional or State, classify as Invitational
+        event_type <- "Invitational"
     }
 
-    # Extract event round (Finals, Semi Finals, Quarterfinals)
+    # Extract event round (Prelims, Finals, Semi Finals, Quarterfinals)
     event_round <- NA
-    round_match <- str_extract(text, "(?i)(Quarter[- ]?Finals?|Semi[- ]?Finals?|Finals?)")
-    if (!is.na(round_match)) {
-        # Normalize the format
-        round_match <- str_to_title(round_match)
-        round_match <- str_replace_all(round_match, "\\s*-\\s*", " ")  # Normalize hyphens to spaces
-        round_match <- str_replace(round_match, "(?i)^Finals?$", "Finals")
-        round_match <- str_replace(round_match, "(?i)Semi.*Finals?", "Semi Finals")
-        round_match <- str_replace(round_match, "(?i)Quarter.*Finals?", "Quarterfinals")
-        event_round <- round_match
+    # Check for Prelims first (common in invitationals)
+    prelims_match <- str_extract(text, "(?i)Prelims?")
+    if (!is.na(prelims_match)) {
+        event_round <- "Prelims"
+    } else {
+        # Check for Finals, Semi Finals, Quarterfinals
+        round_match <- str_extract(text, "(?i)(Quarter[- ]?Finals?|Semi[- ]?Finals?|Finals?)")
+        if (!is.na(round_match)) {
+            # Normalize the format
+            round_match <- str_to_title(round_match)
+            round_match <- str_replace_all(round_match, "\\s*-\\s*", " ")  # Normalize hyphens to spaces
+            round_match <- str_replace(round_match, "(?i)^Finals?$", "Finals")
+            round_match <- str_replace(round_match, "(?i)Semi.*Finals?", "Semi Finals")
+            round_match <- str_replace(round_match, "(?i)Quarter.*Finals?", "Quarterfinals")
+            event_round <- round_match
+        }
     }
 
     # Lines that contain a school name followed by numbers
@@ -145,6 +198,7 @@ extract_scores_labeled <- function(file, directory = data_dir) {
         
         tibble(
             File = file,
+            Competition_Name = competition_name,
             Event_Date = event_date,
             Event_Type = event_type,
             Event_Round = event_round,
@@ -161,20 +215,72 @@ extract_scores_labeled <- function(file, directory = data_dir) {
 scores_labeled_df <- map(pdf_files, extract_scores_labeled) |> bind_rows()
 
 # Convert Event_Date to Date class
+# First ensure Event_Date is character type
+scores_labeled_df <- scores_labeled_df |>
+    mutate(Event_Date_char = as.character(Event_Date))
+
+# Then convert based on format
 scores_labeled_df <- scores_labeled_df |>
     mutate(Event_Date = case_when(
         # MM/DD/YYYY format
-        str_detect(Event_Date, "^\\d{1,2}/\\d{1,2}/\\d{4}$") ~ mdy(Event_Date),
+        str_detect(Event_Date_char, "^\\d{1,2}/\\d{1,2}/\\d{4}$") ~ mdy(Event_Date_char),
         # YYYY-MM-DD format
-        str_detect(Event_Date, "^\\d{4}-\\d{2}-\\d{2}$") ~ ymd(Event_Date),
+        str_detect(Event_Date_char, "^\\d{4}-\\d{2}-\\d{2}$") ~ ymd(Event_Date_char),
         # Month DD, YYYY format
-        str_detect(Event_Date, "^[A-Za-z]+ \\d{1,2},? \\d{4}$") ~ mdy(Event_Date),
-        # Default - try to parse as-is
-        TRUE ~ as.Date(Event_Date, tryFormats = c("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y", "%b %d, %Y"))
-    ))
+        str_detect(Event_Date_char, "^[A-Za-z]+ \\d{1,2},? \\d{4}$") ~ mdy(Event_Date_char),
+        # Default - return NA
+        TRUE ~ as.Date(NA)
+    )) |>
+    select(-Event_Date_char)  # Remove temporary column
 
-# Clean up
-scores_labeled_df <- scores_labeled_df |> arrange(File, School)
+# Clean up - filter out invalid school names and arrange
+scores_labeled_df <- scores_labeled_df |>
+    filter(!str_detect(School, "^(CBA|Class)")) |>
+    # Calculate General_Effect_Total (sum of three effect scores)
+    mutate(General_Effect_Total = Music_Eff1_Tot + Music_Eff2_Tot + Visual_Eff_Tot) |>
+    mutate(Music_Eff_Avg_Total = (Music_Eff1_Tot + Music_Eff2_Tot)/2 ) |>
+    arrange(File, School)
+
+# Create validated dataset - filter out records with scores outside expected ranges
+scores_labeled_df_valid <- scores_labeled_df |>
+    filter(
+        # Component scores (_Tot fields) must be 0-20
+        (is.na(Music_Ind_Tot) | (Music_Ind_Tot >= 0 & Music_Ind_Tot <= 20)) &
+        (is.na(Music_Ens_Tot) | (Music_Ens_Tot >= 0 & Music_Ens_Tot <= 20)) &
+        (is.na(Visual_Ind_Tot) | (Visual_Ind_Tot >= 0 & Visual_Ind_Tot <= 20)) &
+        (is.na(Visual_Ens_Tot) | (Visual_Ens_Tot >= 0 & Visual_Ens_Tot <= 20)) &
+        (is.na(Music_Eff1_Tot) | (Music_Eff1_Tot >= 0 & Music_Eff1_Tot <= 20)) &
+        (is.na(Music_Eff2_Tot) | (Music_Eff2_Tot >= 0 & Music_Eff2_Tot <= 20)) &
+        (is.na(Visual_Eff_Tot) | (Visual_Eff_Tot >= 0 & Visual_Eff_Tot <= 20)) &
+        # Music_Total and Visual_Total must be 0-20
+        (is.na(Music_Total) | (Music_Total >= 0 & Music_Total <= 20)) &
+        (is.na(Visual_Total) | (Visual_Total >= 0 & Visual_Total <= 20)) &
+        # Timing_Penalty_Tot must be -10 to 0
+        (is.na(Timing_Penalty_Tot) | (Timing_Penalty_Tot >= -10 & Timing_Penalty_Tot <= 0))
+    )
+
+# Report validation results
+cat("\n=== Data Validation Summary ===\n")
+cat("Total records extracted:", nrow(scores_labeled_df), "\n")
+cat("Valid records:", nrow(scores_labeled_df_valid), "\n")
+cat("Invalid records filtered out:", nrow(scores_labeled_df) - nrow(scores_labeled_df_valid), "\n")
+
+if (nrow(scores_labeled_df) > nrow(scores_labeled_df_valid)) {
+    cat("\n⚠ Warning: Some records have out-of-range scores (likely PDF extraction issues)\n")
+    invalid_schools <- scores_labeled_df |>
+        anti_join(scores_labeled_df_valid, by = c("File", "School", "Event_Date")) |>
+        select(School, Competition_Name, Event_Date) |>
+        distinct() |>
+        arrange(School)
+    cat("Schools with invalid data:\n")
+    print(invalid_schools, n = Inf)
+    cat("\nUse 'scores_labeled_df_valid' for analysis (recommended)\n")
+    cat("Use 'scores_labeled_df' to see all data including invalid records\n")
+} else {
+    cat("✓ All records are valid\n")
+}
+
+cat("\n")
 
 # View result
-print(scores_labeled_df)
+print(scores_labeled_df_valid)

@@ -7,8 +7,10 @@ library(purrr)
 # URL which lists the PDFs
 base_url <- "https://www.coloradomarching.org/copy-of-scores"
 
+base_url <- "https://www.coloradomarching.org/scores"
+
 # directory to store the downloaded PDFs
-out_dir <- "CBA_scores_pdfs"
+out_dir <- "CBA_scores_pdfs2"
 if (!dir.exists(out_dir)) {
     dir.create(out_dir)
 }
@@ -46,3 +48,4 @@ walk(pdf_links, function(link) {
 })
 
 message("Download complete. Check directory: ", out_dir)
+
