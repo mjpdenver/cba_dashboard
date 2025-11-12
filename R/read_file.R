@@ -7,8 +7,8 @@ library(lubridate)
 
 # Define data directory and PDF files
 # Handle running from both project root and R/ subdirectory
-if (dir.exists("CBA_scores_pdfs2/")) {
-    data_dir <- "CBA_scores_pdfs2/"
+if (dir.exists("data/downloads/")) {
+    data_dir <- "data/downloads/"
 } else if (dir.exists("../CBA_scores_pdfs2/")) {
     data_dir <- "../CBA_scores_pdfs2/"
 } else {

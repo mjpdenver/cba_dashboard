@@ -31,7 +31,9 @@ if (nrow(palisade_data) > 1) {
 
 # School 3: Pueblo County HS
 cat("\n3. Pueblo County HS\n")
-create_school_radar("Pueblo County HS", save_file = "plots/pueblo_county_radar.png")
+create_school_radar("Pueblo County HS")
+
+, save_file = "plots/pueblo_county_radar.png")
 
 cat("\nAll plots created successfully!\n")
 cat("Check the 'plots/' directory for the saved PNG files.\n")

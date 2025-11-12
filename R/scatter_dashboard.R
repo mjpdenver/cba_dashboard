@@ -58,6 +58,15 @@ ui <- fluidPage(
 
             hr(),
 
+            h4("Highlight"),
+
+            selectInput("highlight_school",
+                        "Highlight School:",
+                        choices = c("None" = "none"),
+                        selected = "none"),
+
+            hr(),
+
             h4("Filters"),
 
             selectInput("year_filter",
@@ -120,6 +129,17 @@ server <- function(input, output, session) {
 
         event_type_choices <- c("All Types" = "all", setNames(event_types, event_types))
         updateSelectInput(session, "event_type_filter", choices = event_type_choices)
+    })
+
+    # Populate school highlight dropdown dynamically
+    observe({
+        schools <- df %>%
+            pull(School) %>%
+            unique() %>%
+            sort()
+
+        school_choices <- c("None" = "none", setNames(schools, schools))
+        updateSelectInput(session, "highlight_school", choices = school_choices)
     })
 
     # Reactive dataset with selected variables and filters
@@ -210,6 +230,46 @@ server <- function(input, output, session) {
                          opacity = 0.7,
                          line = list(width = 1, color = 'white')
                      ))
+
+        # Add highlighted school if selected
+        if (input$highlight_school != "none") {
+            highlighted_data <- data %>%
+                filter(School == input$highlight_school)
+
+            if (nrow(highlighted_data) > 0) {
+                # Create hover text for highlighted points
+                highlighted_data <- highlighted_data %>%
+                    mutate(highlight_hover = paste0(
+                        "<b>*** ", School, " ***</b><br>",
+                        "Competition: ", Competition_Name, "<br>",
+                        "Date: ", Event_Date, "<br>",
+                        input$x_var, ": ", round(x, 2), "<br>",
+                        input$y_var, ": ", round(y, 2),
+                        if (input$color_var != "none") paste0("<br>", input$color_var, ": ", color_group) else "",
+                        if (input$shape_var != "none") paste0("<br>", input$shape_var, ": ", shape_group) else ""
+                    ))
+
+                p <- p %>%
+                    add_trace(
+                        data = highlighted_data,
+                        x = ~x,
+                        y = ~y,
+                        type = 'scatter',
+                        mode = 'markers',
+                        name = paste0("★ ", input$highlight_school),
+                        text = ~highlight_hover,
+                        hoverinfo = 'text',
+                        marker = list(
+                            size = 16,
+                            color = 'gold',
+                            opacity = 1,
+                            line = list(width = 3, color = 'red')
+                        ),
+                        showlegend = TRUE,
+                        inherit = FALSE
+                    )
+            }
+        }
 
         # Add 1:1 line if requested
         if (input$show_one_to_one) {

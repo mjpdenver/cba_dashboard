@@ -14,22 +14,60 @@ if (file.exists('read_file.R')) {
     stop("Cannot find read_file.R. Please ensure you're running from the project directory.")
 }
 
-# Define tmp and tmp_long as in eda.R
-tmp <- scores_labeled_df_valid %>%
-    filter(Competition_Name == "CBA 2A-4A Metro Regional 2024" &
-               Event_Class == "3A") %>%
-    select(School, Music_Total, Visual_Total, Visual_Eff_Tot, Music_Eff_Avg_Total)
+# Get unique years for selection
+year_choices <- scores_labeled_df_valid %>%
+    mutate(Year = format(Event_Date, "%Y")) %>%
+    distinct(Year) %>%
+    arrange(desc(Year)) %>%
+    pull(Year)
 
-tmp_long <- tmp %>%
-    pivot_longer(cols = c(Music_Total, Visual_Total, Visual_Eff_Tot, Music_Eff_Avg_Total),
-                 names_to = "Category",
-                 values_to = "Score")
+# Get initial competitions for the first year
+initial_competitions <- scores_labeled_df_valid %>%
+    mutate(Year = format(Event_Date, "%Y")) %>%
+    filter(Year == year_choices[1]) %>%
+    distinct(Competition_Name) %>%
+    arrange(Competition_Name) %>%
+    pull(Competition_Name)
+
+# Get initial dates for the first competition
+initial_dates <- scores_labeled_df_valid %>%
+    filter(Competition_Name == initial_competitions[1]) %>%
+    distinct(Event_Date) %>%
+    arrange(desc(Event_Date)) %>%
+    pull(Event_Date)
+
+# Get Event_Class choices (with "All Classes" option)
+class_choices <- c("All Classes", "1A", "2A", "3A", "4A")
 
 ui <- fluidPage(
     titlePanel("CBA Competition Scores - Interactive Dashboard"),
 
     sidebarLayout(
         sidebarPanel(
+            h4("Filter Data:"),
+
+            selectInput("year",
+                        "Year:",
+                        choices = year_choices,
+                        selected = year_choices[1]),
+
+            selectInput("competition_name",
+                        "Competition Name:",
+                        choices = initial_competitions,
+                        selected = initial_competitions[1]),
+
+            selectInput("event_date",
+                        "Event Date:",
+                        choices = initial_dates,
+                        selected = initial_dates[1]),
+
+            selectInput("event_class",
+                        "Event Class:",
+                        choices = class_choices,
+                        selected = "All Classes"),
+
+            hr(),
+
             h4("Instructions:"),
             p("Click on a category name in the plot to order schools by that category."),
 
@@ -64,25 +102,75 @@ server <- function(input, output, session) {
 
     # Reactive value to store current ordering
     order_by <- reactiveVal("Music_Total")
-    
+
+    # Update competition_name choices when year changes
+    observeEvent(input$year, {
+        available_competitions <- scores_labeled_df_valid %>%
+            mutate(Year = format(Event_Date, "%Y")) %>%
+            filter(Year == input$year) %>%
+            distinct(Competition_Name) %>%
+            arrange(Competition_Name) %>%
+            pull(Competition_Name)
+
+        updateSelectInput(session, "competition_name",
+                          choices = available_competitions,
+                          selected = available_competitions[1])
+    }, ignoreNULL = FALSE)
+
+    # Update event_date choices when competition_name changes
+    observeEvent(input$competition_name, {
+        available_dates <- scores_labeled_df_valid %>%
+            filter(Competition_Name == input$competition_name) %>%
+            distinct(Event_Date) %>%
+            arrange(desc(Event_Date)) %>%
+            pull(Event_Date)
+
+        updateSelectInput(session, "event_date",
+                          choices = available_dates,
+                          selected = available_dates[1])
+    }, ignoreNULL = FALSE)
+
     # Display current ordering
     output$current_order <- renderText({
         gsub("_", " ", order_by())
     })
 
+    # Reactive filtered data based on selections
+    tmp <- reactive({
+        filtered_data <- scores_labeled_df_valid %>%
+            filter(Competition_Name == input$competition_name &
+                       Event_Date == input$event_date)
+
+        # Apply Event_Class filter if not "All Classes"
+        if(input$event_class != "All Classes") {
+            filtered_data <- filtered_data %>%
+                filter(Event_Class == input$event_class)
+        }
+
+        filtered_data %>%
+            select(School, Music_Total, Visual_Total, Visual_Eff_Tot, Music_Eff_Avg_Total)
+    })
+
+    tmp_long <- reactive({
+        tmp() %>%
+            pivot_longer(cols = c(Music_Total, Visual_Total, Visual_Eff_Tot, Music_Eff_Avg_Total),
+                         names_to = "Category",
+                         values_to = "Score")
+    })
+
     # Reactive data ordering
     ordered_data <- reactive({
         if(input$sort_direction == "desc") {
-            tmp %>% arrange(desc(.data[[order_by()]]))
+            tmp() %>% arrange(desc(.data[[order_by()]]))
         } else {
-            tmp %>% arrange(.data[[order_by()]])
+            tmp() %>% arrange(.data[[order_by()]])
         }
     })
 
     output$score_plot <- renderPlotly({
         school_order <- ordered_data() %>% pull(School)
 
-        plot_data <- tmp_long %>%
+        plot_data <- tmp_long() %>%
             mutate(School = factor(School, levels = school_order),
                    Category_Display = gsub("_", " ", Category))
 
