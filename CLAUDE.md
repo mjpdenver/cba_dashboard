@@ -126,9 +126,6 @@ Generates comprehensive summaries of all competitions in the dataset:
 - School counts per competition
 - Automatically filters invalid school names
 
-### R/tem.R
-Experimental ternary plotting examples using the Ames housing dataset. Contains examples for three different ternary plot packages (plotrix, ggtern, Ternary).
-
 ## Common Workflows
 
 ### Analyzing New Competition Data
@@ -172,13 +169,13 @@ The `extract_scores_labeled()` function processes each PDF:
 5. **Labeling** → Maps remaining numbers to predefined score column names
 6. **Combining** → `map()` + `bind_rows()` merges all schools from all files
 
-**Important**: The extraction assumes consistent PDF formatting. School names must end in "HS" followed by numeric scores. Changes to PDF layout require updating the regex patterns in lines 15-18.
+**Important**: The extraction assumes consistent PDF formatting. School names usually end in "HS" followed by numeric scores. Changes to PDF layout require updating the regex patterns in lines 15-18.
 
 ### Data Model
 
 Competition scores follow this structure:
 - **Performance Scores**: Music (Individual, Ensemble, Total) and Visual (Individual, Ensemble, Total)
-- **Effect Scores**: Music_Effect1, Music_Effect2, Visual_Effect
+- **Effect Scores**: Music_Effect1, Music_Effect2, Visual_Effect; Music_Effect1 and Music_Effect2 are recorded by different judges but evaluate the same things.
 - **Aggregations**: Sub_Total, Weighted_Total, Timing_Penalties, Final_Total
 
 Each row represents one school from one competition file. The `File` column allows analysis across multiple competitions.

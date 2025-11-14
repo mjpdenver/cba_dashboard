@@ -3,9 +3,9 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 
-#source('R/read_file.R')
+source('R/read_file.R')
 
-source("R/filter_valid_scores.R")
+#source("R/filter_valid_scores.R")
 cat("=== Creating Correlation Matrix ===\n\n")
 
 # Filter to valid records only
@@ -26,7 +26,7 @@ score_vars <- c(
     "Visual_Ind_Tot", "Visual_Ens_Tot", "Visual_Total",
     "Music_Eff1_Tot", "Music_Eff2_Tot", "Visual_Eff_Tot",
     "General_Effect_Total",
-    "Sub_Total", "Weighted_Total", "Final_Total"
+     "Final_Total"
 )
 
 # Calculate correlation matrix

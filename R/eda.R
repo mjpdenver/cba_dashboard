@@ -1,3 +1,8 @@
+library(tidyr)
+
+dim(df)
+
+df_long <- df %>% 
 
 source('R/filter_valid_scores.R')
 
